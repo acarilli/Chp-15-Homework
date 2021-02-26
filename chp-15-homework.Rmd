@@ -1,0 +1,232 @@
+---
+title: "Chapter 15 Homework"
+author: "Carilli"
+date: '`r format(lubridate::today(), "%B %d, %Y")`'
+output: 
+  html_document:
+    toc: false
+    toc_float: false
+    df_print: paged
+    theme: cerulean
+    highlight: tango
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, comment = NA, message = FALSE, warning = FALSE,
+                      options(digits = 3, scipen = 999))
+library(tidyverse)
+```
+
+# Exercises {.tabset}
+
+## Exercise 1 {.tabset}
+```{r 1data}
+oly <- 
+  here::here("data", "olympics_HW.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() %>%
+  drop_na() %>% 
+  mutate(year = as.integer(year))
+```
+
+### (a)
+
+```{r 1a}
+oly %>%
+  plm::plm(
+    medals ~ population + gdp + host + temp + elevation,
+    data = .,
+    index = "country",
+    model = "within"
+  ) %>%
+  broom::tidy()
+```
+
+
+### (b)
+
+```{r 1b}
+oly %>%
+  plm::plm(
+    medals ~ population + gdp + host + temp + elevation,
+    data = .,
+    index = c("country", "year"),
+    model = "within",
+    effect = "twoways"
+  ) %>%
+  broom::tidy()
+```
+
+### (c)
+
+```{r 1c}
+oly %>%
+  plm::plm(
+    medals ~ population + gdp + host + temp + elevation,
+    data = .,
+    index = c("country", "year"),
+    model = "within",
+    effect = "twoways"
+  ) %>%
+  broom::augment() %>%
+  cbind(oly$country) %>%
+  group_by(oly$country) %>%
+  mutate(lag_e = dplyr::lag(.resid)) %>%
+  ungroup %>%
+  lm(.resid ~ lag_e, .) %>%
+  jtools::summ(digits = 4)
+
+oly %>%
+  plm::plm(
+    medals ~ population + gdp + host + temp + elevation,
+    data = .,
+    index = c("country", "year"),
+    model = "within",
+    effect = "twoways"
+  ) %>%
+  plm::pwartest()
+```
+
+
+### (d)
+
+```{r 1d}
+rho <-
+  plm::plm(
+    medals ~ population + gdp + host + temp + elevation,
+    data = oly,
+    index = c("country", "year"),
+    model = "within",
+    effect = "twoways"
+  ) %>%
+  broom::augment() %>%
+  cbind(oly$country) %>%
+  group_by(oly$country) %>%
+  mutate(lag_e = dplyr::lag(.resid),
+         e = .resid) %>%
+  ungroup %>%
+  lm(e ~ lag_e, .) %>%
+  broom::tidy() %>%
+  filter(term == "lag_e") %>%
+  pull(estimate)
+
+plm::plm(
+  medals ~ population + gdp + host + temp + elevation,
+  data = oly %>%
+    group_by(country) %>%
+    mutate(
+      medals = medals - rho * dplyr::lag(medals),
+      population = population - rho * dplyr::lag(population),
+      gdp = gdp - rho * dplyr::lag(gdp),
+      host = host - rho * dplyr::lag(host)
+    ) %>%
+    ungroup,
+  index = c("country", "year"),
+  model = "within",
+  effect = "twoways"
+) %>%
+  broom::tidy()
+
+panelAR::panelAR(
+  medals ~ population + gdp + host,
+  data = as.data.frame(oly),
+  panelVar = "country",
+  timeVar = "year",
+  autoCorr = "ar1",
+  panelCorrMethod = "none",
+  rho.na.rm = TRUE
+) %>% 
+  summary()
+```
+
+### (e)
+
+```{r 1e}
+plm::plm(medals ~ lag_medals + population + gdp + host,
+    data = oly %>% 
+      group_by(country) %>% 
+      mutate(lag_medals = dplyr::lag(medals)) %>% 
+      ungroup(),
+    index = c("country", "year"),
+    model = "within",
+    effect = "twoways"
+    ) %>% 
+  broom::tidy()
+
+plm::plm(medals ~ lag_medals + population + gdp + host + factor(year),
+    data = oly %>% 
+      group_by(country) %>% 
+      mutate(lag_medals = dplyr::lag(medals)) %>% 
+      ungroup, 
+    index = c("country"),
+    model = "within"
+    ) %>% 
+  broom::tidy()
+```
+
+### (f)
+
+```{r 1f}
+plm::plm(
+  medals ~ lag_medals + population + gdp + host + temp + elevation,
+  data = oly %>%
+    group_by(country) %>%
+    mutate(lag_medals = dplyr::lag(medals)) %>%
+    ungroup(),
+  index = c("country", "year"),
+  model = "within",
+  effect = "twoways"
+) %>%
+  plm::pwartest()
+
+
+panelAR::panelAR(
+  medals ~ dplyr::lag(medals) + population + gdp + host,
+  data = as.data.frame(oly),
+  panelVar = "country",
+  timeVar = "year",
+  autoCorr = "ar1",
+  panelCorrMethod = "none",
+  rho.na.rm = TRUE
+) %>%
+  summary()
+```
+
+### (g)
+
+## Exercise 2 {.tabset}
+```{r 2data}
+oly <- 
+  here::here("data", "olympics_HW.csv") %>% 
+  read_csv() %>% 
+  janitor::clean_names() 
+```
+
+### (a)
+
+```{r 2a}
+oly %>% 
+  plm::pvar()
+```
+
+
+### (b)
+
+```{r 2b}
+oly %>% 
+  lm(medals ~ population + gdp + host + temp + elevation, .) %>% 
+  jtools::summ(digits = 4)
+```
+
+### (c)
+
+```{r 2c}
+plm::plm(medals ~ population + gdp + host + temp + elevation,
+         data = oly,
+         model = "random") %>%
+  broom::tidy()
+```
+
+
+### (d)
